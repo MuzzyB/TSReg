@@ -1,0 +1,814 @@
+---
+title: "Time Series Analysis-Regression Models Template"
+author: "Muuzaani Nkhoma"
+date: "May 28, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+### Load Packages run once before running the program or as needed
+knitr::opts_chunk$set(echo = TRUE)
+library(car)
+library(MASS)
+library(tidyverse)
+library(forecast)
+library(plotly) # For trellises
+
+```
+
+
+##### Read, Explore, and Prepare the data
+
+```{r }
+
+print("Start importing dataset")
+fatal <- read_csv("Data Time Series/Table B.25 U.S.Traffic Fatalities.csv")
+
+dim(fatal)
+ncol(fatal)
+nrow(fatal)
+names(fatal)
+print("Finished importing dataset")
+
+```
+
+
+```{r}
+
+fatal.ts <- as.ts(fatal)
+
+```
+
+##### View first observations
+
+```{r }
+
+head(fatal.ts)
+
+```
+
+##### View last observations
+```{r }
+
+tail(fatal.ts)
+
+```
+
+##### Summary Statistics
+
+```{r }
+
+summary(fatal.ts)
+
+```
+
+##### Plot Scatterplots
+To investigate the linear relationship between response and 
+regressor variables
+
+```{r}
+
+pairs(fatal.ts)
+
+```
+
+
+######Correlation Matrix
+Test for correlation to get the values of the correlation between response and regressor variables
+
+```{r }
+
+cor(fatal.ts)
+
+```
+
+
+```{r}
+
+fatal.ts %>%
+  as.data.frame() %>%
+  GGally::ggpairs()
+```
+
+
+```{r}
+autoplot(fatal.ts[,c("ResPopul", "LicDriv", "RegMV", "MVMiles", "AnnUR")]) +
+  ylab("Variables") + xlab("Year")
+
+```
+
+
+```{r}
+vars <- setdiff(names(fatal), "Year")
+plots <- lapply(vars, function(var) {
+  plot_ly(fatal, x = ~Year, y = as.formula(paste0("~", var))) %>%
+    add_lines(name = var)
+})
+subplot(plots, nrows = length(plots), shareX = TRUE, titleX = FALSE)
+```
+
+
+#####Fit the Full model with all regressor variables
+
+```{r }
+
+print("Started fitting the linear model")
+fatal.model <- tslm(Fatal ~ ResPopul + LicDriv + RegMV + MVMiles + AnnUR, data = fatal.ts) 
+print("Finished fitting linear model")
+
+```
+
+##### Summary Statistics
+
+```{r }
+
+summary.lm(fatal.model)
+
+```
+
+##### ANOVA TABLE
+
+```{r }
+
+ anova(fatal.model)
+
+```
+
+
+```{r }
+
+print("Start fitting predicted and residual values")
+fatal.model.fit = fitted(fatal.model)
+fatal.model.res = residuals(fatal.model)
+fatal.model.stdres= rstudent(fatal.model)
+print("Finished fitting predicted and residual values")
+
+```
+
+
+##### Calculate the predictive residuals in the Full Model
+
+
+```{r }
+
+AIC(fatal.model)
+
+```
+
+```{r }
+
+BIC(fatal.model)
+
+```
+
+#####Press Statistic
+```{r }
+
+pr <- residuals(fatal.model)/(1-lm.influence(fatal.model)$hat)
+#' calculate the PRESS
+PRESS <- sum(pr^2)
+PRESS
+
+```
+
+
+#####Checking multicollinearity for independent variables in the Full Model.
+
+
+```{r }
+
+library(perturb)
+car::vif(fatal.model)
+
+```
+
+
+```{r }
+
+car::vif(fatal.model) > 10 #Cutoff Point
+
+```
+
+
+
+
+#####Eigensystem Analysis
+Condition Number          < 100: No serious problem
+100<= condition number < 1000: Moderate to strong multicollinerity
+Condition Number       >= 1000: Severe multicollinearity
+
+At least one condition Index >= 1000 means near linear dependency
+
+```{r }
+
+print(colldiag(fatal.model))
+
+```
+
+
+#### Full Model Diagnostics
+
+(Are all the conditions satisfied? LINE)
+(What regressors seem important?)
+(Any Possible Outliers?)
+(Is there any need for transformation of response or regressor variables?)
+
+####Residual Analysis
+#####Diagnostics Plot
+
+```{r }
+
+checkresiduals(fatal.model)
+
+
+```
+
+
+
+```{r}
+fatal.model.fit = fitted(fatal.model)
+fatal.model.res=residuals(fatal.model)
+
+cbind(fatal.model.fit = fitted(fatal.model), 
+      fatal.model.res=residuals(fatal.model)) %>%
+  as.data.frame() %>%
+  ggplot(aes(x=Fitted, y=Residuals)) + geom_point()
+
+```
+
+
+####MODEL ADEQUACY CHECKING
+
+####Model Diagnostics
+####Residual Analysis
+
+#####Diagnostics Plots- Normal Probability and Histogram
+Check for Residual Normality
+Check for Outliers
+
+```{r }
+
+par(mfrow=c(1,2),oma=c(0,0,0,0))
+qqnorm(fatal.model.res,pch=16)
+qqline(fatal.model.res, col = 2)
+hist(fatal.model.res, col="gray",xlab='Residual',main='Histogram of Studentized \nResiduals Model #1')
+
+```
+
+#### Model Diagnostics
+####Residual Analysis
+
+####Diagnostics Plot- Studentized Residuals and R-Student Residual Plots
+
+Check for Equal(Constant) Variance
+Check for Outliers
+Check for nonlinearity or other Patterns
+
+```{r }
+
+par(mfrow=c(1,2),oma=c(0,0,0,0))
+plot(fatal.model.res~fatal.model.fit,pch=16,xlab='Fitted Value',ylab='studentized Residuals', 
+     main = "Studentized Residuals \nvs Fits Model #1")
+abline(h = 0)
+plot(fatal.model.stdres~fatal.model.fit,pch=16,xlab='Fitted Value',ylab='R-Student Residuals', 
+     main = "R-Student Residuals \nvs Fits Model #1")
+abline(h = 0)
+
+```
+
+##### Model and Variable Selection
+(To be performed if the number of variables is very large)
+(Otherwise go straight to All Possible Regression )
+
+##### Stepwise Regression Model Selection
+
+```{r }
+
+step(lm(Fatal~.-Year, data = fatal),direction="both")
+
+```
+
+##### Backward Regression Model Selection
+
+```{r }
+
+step(lm(Fatal~.-Year, data = fatal),direction="backward")
+
+```
+
+#####Forward Regression Model Selection
+
+```{r }
+
+step(lm(Fatal~.-Year, data = fatal),direction="forward")
+
+```
+
+
+#####  Evaluate Subset Regression Models
+#####   All Subsets Regression
+
+```{r }
+
+library(leaps)
+attach(fatal)
+fatal.regsubsets <-regsubsets(Fatal~.-Year, data = fatal,nbest=5)
+fatal.regsubsets.summary   =summary(fatal.regsubsets,all.best=TRUE,matrix=TRUE,matrix.logical=FALSE,df=NULL)
+
+names(fatal.regsubsets.summary)
+
+
+```
+
+
+```{r }
+
+fatal.regsubsets.summary$outmat
+
+```
+
+
+```{r }
+
+layout(matrix(1:1, ncol = 2))
+## Mallow Cp
+res.legend <- subsets(fatal.regsubsets, statistic="cp", legend = FALSE, min.size = 1, main = "Mallow Cp")
+abline(a = 1, b = 1, lty = 2)
+
+```
+
+
+```{r }
+
+layout(matrix(1:1, ncol = 2))
+## Adjusted R2
+res.legend <- subsets(fatal.regsubsets, statistic="adjr2", legend = FALSE, min.size = 1, main = "Adjusted R^2")
+abline(a = 1, b = 1, lty = 2)
+
+```
+
+```{r }
+
+plot(fatal.regsubsets,scale="Cp")
+
+```
+
+```{r }
+
+fatal.regsubsets.summary$cp
+
+```
+
+```{r }
+
+plot(fatal.regsubsets,scale="adjr2")
+
+```
+
+```{r }
+
+fatal.regsubsets.summary$adjr2
+
+```
+
+```{r }
+
+fatal.regsubsets.summary$outmat[8, ]
+fatal.regsubsets.summary$outmat[16, ]
+                
+```
+
+
+```{r }
+
+fatal.regsubsets.summary$cp[8]
+fatal.regsubsets.summary$cp[16]
+                
+```
+
+
+```{r }
+
+fatal.regsubsets.summary$adjr2[8]
+fatal.regsubsets.summary$adjr2[16]
+                
+```
+
+
+```{r }
+
+fatal.regsubsets.summary$rss[8]
+fatal.regsubsets.summary$rss[16]
+                
+```
+
+```{r }
+
+fatal.regsubsets.summary$bic[8]
+fatal.regsubsets.summary$bic[16]
+
+```
+
+```{r }
+
+fatal.regsubsets.summary$rsq[8]
+fatal.regsubsets.summary$rsq[16]
+
+```
+
+#### Analysis of Individual Chosen Models
+
+
+##### Chosen Models:
+
+```{r }
+#1 From Scatterplots
+lm(formula = Fatal ~  AnnUR , data = fatal)
+#2 From All Possible Regression
+lm(formula = Fatal ~ RegMV + AnnUR, data = fatal)
+#3 From Stepwise Selection Process
+lm(formula = Fatal ~ ResPopul + AnnUR, data = fatal)
+#4 From Backward Selection Process
+lm(formula = Fatal ~ ResPopul + AnnUR, data = fatal)
+#5 From Forward Selection Process
+lm(formula = Fatal ~ (Year +ResPopul + LicDriv + RegMV  + 
+    MVMiles + AnnUR) - Year, data = fatal)
+
+
+```
+
+#### Candidate Model #1
+ fatalities ~ motorvehicles + unemployment
+
+##### Fitting the model
+
+
+```{r }
+
+fatal.model <- lm(formula = Fatal ~ RegMV + AnnUR, data = fatal) 
+
+```
+
+##### Model Summary
+
+```{r }
+
+summary.lm(fatal.model)
+
+```
+
+##### Model Analysis of Variance 
+
+```{r }
+
+anova(fatal.model)
+
+```
+
+#####Fitted and Residual Values
+
+```{r }
+  
+fatal.model.fit = Fitted
+fatal.model.res = Residuals
+#fatal.model.stdres= rstudent(fatal.model)
+
+```
+
+####MODEL ADEQUACY CHECKING
+
+####Model Diagnostics
+####Residual Analysis
+
+#####Diagnostics Plots- Normal Probability and Histogram
+Check for Residual Normality
+Check for Outliers
+
+```{r }
+
+par(mfrow=c(1,2),oma=c(0,0,0,0))
+qqnorm(fatal.model.res,pch=16)
+qqline(fatal.model.res, col = 2)
+hist(fatal.model.res, col="gray",xlab='Residual',main='Histogram of Studentized \nResiduals Model #1')
+
+```
+
+#### Model Diagnostics
+####Residual Analysis
+
+####Diagnostics Plot- Studentized Residuals and R-Student Residual Plots
+
+Check for Equal(Constant) Variance
+Check for Outliers
+Check for nonlinearity or other Patterns
+
+```{r }
+
+par(mfrow=c(1,2),oma=c(0,0,0,0))
+plot(fatal.model.res~fatal.model.fit,pch=16,xlab='Fitted Value',ylab='studentized Residuals', 
+     main = "Studentized Residuals \nvs Fits Model #1")
+abline(h = 0)
+plot(fatal.model.stdres~fatal.model.fit,pch=16,xlab='Fitted Value',ylab='R-Student Residuals', 
+     main = "R-Student Residuals \nvs Fits Model #1")
+abline(h = 0)
+
+```
+
+#####Further Residual Analysis
+#####Partial Regression Plots
+
+Assess linearity of individual regressors
+Check for added- Value/Marginal usefulenes of regressor variables
+
+
+```{r, eval=FALSE}
+
+#Partial Regression Plots Model #1
+par(mfrow=c(1,2),oma=c(0,0,0,0))
+# Regress y on other regressors without candidate regressor
+fatal.model.x2 <- lm(formula = y ~ x3, data = fatal)
+fatal.model.x3 <- lm(formula = y ~ x2 , data = fatal)
+# Regress candidate regressor on other remaining regressors
+model.x2 <- lm(x2 ~ x3, data = fatal)
+model.x3 <- lm(x3 ~ x2, data = fatal)
+
+```
+
+#####Partial Regression Plots Model #1
+
+```{r,eval=FALSE }
+
+plot(resid(fatal.model.x2)~resid(model.x2), pch=16,
+     xlab = "residuals of x2 vs other x",
+     ylab = "residuals of y vs other x",
+     main = "Partial Regression \nPlot of \nModel #1 x2")
+abline(lm(resid(fatal.model.x2)~resid(model.x2)))
+
+plot(resid(fatal.model.x3)~resid(model.x3), pch=16,
+     xlab = "residuals of x3 vs other x",
+     ylab = "residuals of y vs other x",
+     main = "Partial Regression \nPlot of \nModel #1 x3")
+abline(lm(resid(fatal.model.x3)~resid(model.x3)))
+
+```
+
+####Model Diagnostics
+#####Lack-of-fit test
+
+```{r,eval=FALSE }
+
+library(alr3)
+pureErrorAnova(fatal.model)
+
+```
+
+```{r,eval=FALSE }
+
+Reduced=fatal.model #fit reduced model
+Full=lm(Fatal ~  0 + as.factor(RegMV) + as.factor(AnnUR), data = fatal) #fit full model
+anova(Reduced, Full) #get lack-of-fit test
+
+``` 
+
+####TRANSFORMATIONS AND POLYNOMIAL REGRESSION
+Dealing with Constant Variance and Non-Normality
+####a.Linear Transformation
+
+#####Box-Cox Method Transformation on y 
+
+#####Box- Cox Method
+```{r,eval=FALSE }
+
+boxcox(Fatal ~ ., data = fatal,
+       lambda = seq(-1.5, 1.5, length = 10))
+
+```
+
+#####b. Weighted Least Squares
+Define the weights and fit the model:
+Response yi1
+
+```{r,eval=FALSE }
+#Needs a standard deviation column created from local means
+y1respw.model = lm(yi1~x1 + x2 + x3, weights = SD, data = taguchidf)
+summary(y1respw.model)
+
+```
+
+Try fitting the regression without weights and see what the difference is.
+
+```{r,eval=FALSE }
+gu <- lm(crossx ~ energy, strongx)
+summary(gu)
+
+```
+
+The two fits can be compared
+```{r,eval=FALSE}
+plot(crossx ~ energy, data=strongx)
+ abline(g)
+ abline(gu,lty=2)
+ 
+```
+
+####Polynomial Regression
+#####Dealing with nonlinear or curvelinesr problems
+
+
+####DIAGNOSTICS-LEVERAGE AND INFLUENTIAL ANALYSIS
+
+####SUMMARY
+
+#####Influence
+
+```{r }
+
+fatal.model.infl <- influence.measures(fatal.model)
+p1 = 2                #Number of regressor variables under consideration
+p1
+n1 = 47     #Number of Observations
+n1
+#Influential Diagnostics Summary
+summary(fatal.model.infl) # only these
+
+```
+
+####Model Diagnostics
+####Influential Analysis
+
+#####1 DFFITS 
+(how much the regression function changes at the i-th case / 
+observation when the  i -th case / observation is deleted.)
+identify DFFITS values > 2/(sqrt(nrow(fatald))
+
+```{r }
+
+cutoffdf1 =  2 /sqrt(p1/n1) 
+cutoffdf1
+fatal.model.dfits = dffits(fatal.model)
+plot(dffits(fatal.model), pch=16, ylab="DFFITS", main = "DFFITS Plot of Model #1")
+abline(h = cutoffdf1)
+
+```
+
+####Model Diagnostics
+#####Influential Analysis
+
+#2 Cook's D  (how much the entire regression function changes when 
+# the i -th case is deleted)
+# identify D values > 4/(n-p-1) 
+
+```{r }
+
+cutoffCD1 =  4/(n1-p1-1) 
+cutoffCD1
+plot(cooks.distance(fatal.model), pch=20,  ylab="Cook's distance", main = "Cook's Distance\n  Plot of Model #1")
+abline(h = cutoffCD1)
+
+```
+
+####Model Diagnostics
+##Influential Analysis
+
+#3 DFBETAS plot (measures how much the coefficients change when the i-th case is deleted.)
+# identify DFBETAS values > 2/(sqrt(nrow(fatald))
+
+```{r }
+
+cutoffdb1 = 2 / sqrt(n1)
+cutoffdb1
+fatal.model.dfb = dfbeta(fatal.model, infl = lm.influence(fatal.model, do.coef = TRUE))
+plot(dfbetas(fatal.model), pch=20, ylab="DBETAS", main = "DFBETAS Plot of Model #1")
+
+```
+
+####Model Diagnostics
+####Influential Analysis
+
+#####4 Leverage Points 
+(regressor variable with the largest distance from the center of the centroid)
+which observations 'are' influential X-Value Outliers
+(2 * p) / n
+
+```{r }
+
+cutoffhat1 = (2 * p1) / n1
+cutoffhat1
+plot(hatvalues(fatal.model), pch=20, ylab='Hat values', main = "Levereage Points Plot\n of Model #1")
+abline(h = cutoffhat1)
+
+```
+
+####Model Diagnostics
+#####Influential Analysis
+
+##### OtherPlots of Influence
+
+```{r,eval=FALSE }
+
+plot(rstudent(fatal.model) ~ hatvalues(fatal.model),pch=20, main = "R-Student Residuals \nvs Leverage Model #3") # recommended by some
+plot(fatal.model,pch=20, which = 5) # an enhanced version of that via plot(<lm>)
+layout(matrix(c(1,2,3,4),2,2)) # optional 4 graphs/page 
+plot(fatal.model)
+
+```
+####Model Diagnostics
+
+#####Influential Diagnostics Output
+
+```{r,eval=FALSE }
+
+fatal.model.infl <- influence.measures(fatal.model)
+fatal.model.infl         # all
+
+```
+
+#### MULTICOLLINEARITY DIAGNOSTICS
+
+Checking multicollinearity for independent variables.
+Check for extent of lack of orthogonality and sources
+
+#####1.Variance Inflation Factors
+
+```{r }
+
+car::vif(fatal.model) # variance inflation factors 
+car::vif(fatal.model) > 10 # problem?
+
+```
+
+####2.Eigensystem Analysis
+Condition Number          < 100: No serious problem
+100<= condition number < 1000: Moderate to strong multicollinerity
+Condition Number       >= 1000: Severe multicollinearity
+
+Condition Index > 30 and variance decomposition proportion 0.5 means near linear dependency and indicates multicollinearity
+
+#####a.Variance Decomposition Proportions
+
+```{r }
+
+print(colldiag(fatal.model))
+
+```
+
+#####b.Variance Decomposition Proportions (Centered)
+
+```{r }
+
+print(colldiag(fatal.model), center = TRUE)
+
+```
+
+####DETECTING AUTOCORRELATION:THE DURBIN-WATSON TEST 
+
+
+##### Load Orcutt package
+```{r }
+
+library(orcutt)
+
+```
+
+#### DURBIN_WATSON TEST
+Decision Procedure
+If d < dL reject H0 : phi  = 0???
+If d > dU do not reject H0 : phi = 0??? = 
+If dL ???d???dU the test is inconclusive where d is the DW statistic
+
+##### Run the test
+```{r }
+
+dwt(fatal.model, alternative="positive")
+
+```
+
+##### Residuals versus Time Plot
+
+```{r }
+
+par(mfrow=c(1,1),oma=c(0,0,0,0))
+plot(fatal.model.res~fatal$Year,pch=16,xlab='Year',ylab='Residuals', 
+     main = "Residuals vs Time Plot \nfor Model #1")
+
+
+```
+
+
+##### Estimate the parameter estimates using cochran.orcutt function.
+
+```{r }
+
+fatal.model.cofit<-cochrane.orcutt(fatal.model)
+fatal.model.cofit
+
+```
+
+# Summary of the transformed model without autocorrelation.
+
+```{r 1c}
+
+summary(fatal.model.cofit)
+
+```
